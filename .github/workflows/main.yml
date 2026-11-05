@@ -11,34 +11,45 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack uploaded project ZIP
+      - name: Unpack project ZIP
         shell: bash
         run: |
-          test -f obhody-app.zip || { echo 'Upload obhody-app.zip to repository root'; exit 1; }
+          test -f obhody-app.zip || { echo 'ERROR: Upload obhody-app.zip to repository root'; exit 1; }
           mkdir -p source
           unzip -q -o obhody-app.zip -d source
-          test -f source/obhody-app/android/settings.gradle.kts || { echo 'Missing obhody-app/android/settings.gradle.kts in ZIP'; exit 1; }
+          test -f source/obhody-app/android/settings.gradle.kts || { echo 'ERROR: Android project not found in ZIP'; exit 1; }
 
-      - name: Set up Java 17
+      - name: Configure Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # Ubuntu GitHub-hosted runners have the Android SDK already installed.
+      # Do not use android-actions/setup-android here: its sdkmanager update
+      # is what failed in the previous run.
+      - name: Verify installed Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME" || { echo 'ERROR: Android SDK is missing'; exit 1; }
+          ls -la "$ANDROID_HOME/platforms" || true
+          ls -la "$ANDROID_HOME/build-tools" || true
 
-      - name: Set up Gradle
+      - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
       - name: Build debug APK
-        run: gradle -p source/obhody-app/android --no-daemon assembleDebug
+        shell: bash
+        run: gradle -p source/obhody-app/android --no-daemon assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
