@@ -1,27 +1,48 @@
-
 name: Build Android APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'obhody-app.zip'
+      - '.github/workflows/main.yml'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack uploaded project ZIP
+        shell: bash
+        run: |
+          test -f obhody-app.zip || { echo 'Upload obhody-app.zip to repository root'; exit 1; }
+          mkdir -p source
+          unzip -q -o obhody-app.zip -d source
+          test -f source/obhody-app/android/settings.gradle.kts || { echo 'Missing obhody-app/android/settings.gradle.kts in ZIP'; exit 1; }
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Build APK
-        run: gradle -p android assembleDebug
-      - uses: actions/upload-artifact@v4
+
+      - name: Build debug APK
+        run: gradle -p source/obhody-app/android --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: Obhody-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: source/obhody-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
