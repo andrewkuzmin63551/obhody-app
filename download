@@ -1,0 +1,11 @@
+.env
+*.db
+*.sqlite
+__pycache__/
+.pytest_cache/
+.gradle/
+/build/
+/local.properties
+.idea/
+*.iml
+.DS_Store
