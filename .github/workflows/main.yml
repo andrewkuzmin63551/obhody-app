@@ -1,59 +1,71 @@
-name: Build Android APK
+ame: Обходы — Подписанный APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'obhody-app.zip'
+      - 'Obhody_Android_v*.zip'
       - '.github/workflows/main.yml'
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  signed-apk:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
     steps:
-      - name: Checkout
+      - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Unpack project ZIP
+      - name: Select newest versioned project archive
         shell: bash
         run: |
-          test -f obhody-app.zip || { echo 'ERROR: Upload obhody-app.zip to repository root'; exit 1; }
+          set -euo pipefail
+          latest=$(find . -maxdepth 1 -type f -name 'Obhody_Android_v*.zip' -printf '%f\n' | sort -V | tail -n 1)
+          test -n "$latest" || { echo 'No Obhody_Android_v*.zip file in repository root'; exit 1; }
           mkdir -p source
-          unzip -q -o obhody-app.zip -d source
-          test -f source/obhody-app/android/settings.gradle.kts || { echo 'ERROR: Android project not found in ZIP'; exit 1; }
+          unzip -q "$latest" -d source
+          test -f source/obhody-app/android/settings.gradle.kts || { echo 'Archive must contain obhody-app/android/settings.gradle.kts'; exit 1; }
+          echo "Building from $latest"
 
-      - name: Configure Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # Ubuntu GitHub-hosted runners have the Android SDK already installed.
-      # Do not use android-actions/setup-android here: its sdkmanager update
-      # is what failed in the previous run.
-      - name: Verify installed Android SDK
+      - name: Verify Android SDK
         shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          test -d "$ANDROID_HOME" || { echo 'ERROR: Android SDK is missing'; exit 1; }
-          ls -la "$ANDROID_HOME/platforms" || true
-          ls -la "$ANDROID_HOME/build-tools" || true
+          test -d "$ANDROID_HOME" || { echo 'Android SDK not available on runner'; exit 1; }
 
-      - name: Configure Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Build debug APK
+      - name: Verify signing secrets and restore permanent key
         shell: bash
-        run: gradle -p source/obhody-app/android --no-daemon assembleDebug --stacktrace
+        env:
+          OBHODY_KEYSTORE_BASE64: ${{ secrets.OBHODY_KEYSTORE_BASE64 }}
+          OBHODY_KEYSTORE_PASSWORD: ${{ secrets.OBHODY_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$OBHODY_KEYSTORE_BASE64" || { echo 'Missing repository secret OBHODY_KEYSTORE_BASE64'; exit 1; }
+          test -n "$OBHODY_KEYSTORE_PASSWORD" || { echo 'Missing repository secret OBHODY_KEYSTORE_PASSWORD'; exit 1; }
+          printf '%s' "$OBHODY_KEYSTORE_BASE64" | base64 --decode > source/obhody-app/android/app/obhody-release.p12
+          test -s source/obhody-app/android/app/obhody-release.p12
 
-      - name: Upload APK
+      - name: Build permanently signed release APK
+        shell: bash
+        env:
+          OBHODY_KEYSTORE_PASSWORD: ${{ secrets.OBHODY_KEYSTORE_PASSWORD }}
+        run: gradle -p source/obhody-app/android --no-daemon assembleRelease --stacktrace
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Obhody-APK
-          path: source/obhody-app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Obhody-SIGNED-release-APK
+          path: source/obhody-app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
