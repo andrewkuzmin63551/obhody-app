@@ -1,4 +1,4 @@
-ame: Обходы — Подписанный APK
+name: Обходы — Подписанный APK
 
 on:
   workflow_dispatch:
